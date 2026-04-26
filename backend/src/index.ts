@@ -51,6 +51,9 @@ async function bootstrap(): Promise<void> {
     /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
     /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
     /^https:\/\/[a-z0-9-]+\.onrender\.com$/,
+    // Apollo Sandbox embebido (cuando se abre /graphql en el navegador)
+    /^https:\/\/sandbox\.embed\.apollographql\.com$/,
+    /^https:\/\/studio\.apollographql\.com$/,
   ];
 
   app.use(
