@@ -1,0 +1,86 @@
+# Stack completo: Mongo (replica set) + backend GraphQL + frontend Next.js
+#
+# Uso rapido:
+#   docker compose up -d --build       # construye y levanta todo
+#   docker compose logs -f              # sigue logs
+#   docker compose down                 # detiene (preserva datos)
+#   docker compose down -v              # detiene + borra volumen mongo
+#
+# Endpoints:
+#   - Frontend:    http://localhost:3000
+#   - Backend:     http://localhost:4000/graphql  (health: /health)
+#   - Mongo:       mongodb://localhost:27017     (replicaSet=rs0)
+#
+# Para correr el seed UNA VEZ tras el primer up:
+#   docker compose exec backend node dist/scripts/seed.js
+#   (o si no compilaste el seed: docker compose run --rm backend npx ts-node src/scripts/seed.ts)
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: inv-kardex-mongo
+    restart: unless-stopped
+    command: ['--replSet', 'rs0', '--bind_ip_all', '--port', '27017']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    networks: [appnet]
+    healthcheck:
+      # Inicializa el replica set la primera vez y luego solo chequea status.
+      test: |
+        echo "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }) }" | mongosh --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 20s
+      retries: 30
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: inv-kardex-backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/inventario-kardex?replicaSet=rs0
+      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto-en-produccion-min-32-chars}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    ports:
+      - '4000:4000'
+    networks: [appnet]
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:4000/health']
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* deben pasarse en build-time (se hornean en el bundle JS).
+        # Usar la URL publica desde la perspectiva del navegador del usuario.
+        NEXT_PUBLIC_GRAPHQL_URL: ${NEXT_PUBLIC_GRAPHQL_URL:-http://localhost:4000/graphql}
+    container_name: inv-kardex-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - '3000:3000'
+    networks: [appnet]
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  mongo_data:
