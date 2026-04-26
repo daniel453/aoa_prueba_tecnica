@@ -201,7 +201,12 @@ export default function KardexPage({ params }: KardexPageProps) {
               )}
             </div>
             <div className="mt-3 inline-block rounded-md border border-slate-200 bg-white p-2">
-              <Barcode value={producto.codigo} height={42} fontSize={11} />
+              <Barcode
+                value={producto.codigo}
+                height={42}
+                fontSize={11}
+                printableLabel={`${producto.codigo} - ${producto.nombre}`}
+              />
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
