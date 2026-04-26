@@ -112,6 +112,15 @@ export function MovimientoForm({
   const mutation = isEntrada ? REGISTRAR_ENTRADA : REGISTRAR_SALIDA;
   const [registrar, { loading: registrando }] = useMutation(mutation, {
     refetchQueries: [LISTAR_MOVIMIENTOS, LISTAR_PRODUCTOS],
+    onCompleted: () => {
+      toast.success(isEntrada ? 'Entrada registrada' : 'Salida registrada');
+      setConfirmarOpen(false);
+      router.push('/movimientos');
+    },
+    onError: (err) => {
+      toast.error(getErrorMessage(err));
+      setConfirmarOpen(false);
+    },
   });
 
   const handleConfirmar = async () => {
@@ -128,14 +137,8 @@ export function MovimientoForm({
           },
         },
       });
-      toast.success(
-        isEntrada ? 'Entrada registrada' : 'Salida registrada',
-      );
-      setConfirmarOpen(false);
-      router.push('/movimientos');
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-      setConfirmarOpen(false);
+    } catch {
+      // Toast ya disparado via onError; await rejecto por errorPolicy default.
     }
   };
 

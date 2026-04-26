@@ -33,6 +33,13 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
 
   const [actualizarProducto] = useMutation(ACTUALIZAR_PRODUCTO, {
     refetchQueries: [LISTAR_PRODUCTOS, LISTAR_CATEGORIAS],
+    onCompleted: () => {
+      toast.success('Producto actualizado');
+      router.push('/productos');
+    },
+    onError: (err) => {
+      toast.error(getErrorMessage(err));
+    },
   });
 
   const handleSubmit = async (values: ProductoFormValues) => {
@@ -50,10 +57,8 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
           },
         },
       });
-      toast.success('Producto actualizado');
-      router.push('/productos');
-    } catch (err) {
-      toast.error(getErrorMessage(err));
+    } catch {
+      // Toast ya disparado via onError. Silenciamos para no propagar a Formik.
     }
   };
 

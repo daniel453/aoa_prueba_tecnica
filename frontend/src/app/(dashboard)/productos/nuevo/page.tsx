@@ -19,6 +19,13 @@ export default function NuevoProductoPage() {
   const router = useRouter();
   const [crearProducto] = useMutation(CREAR_PRODUCTO, {
     refetchQueries: [LISTAR_PRODUCTOS, LISTAR_CATEGORIAS],
+    onCompleted: () => {
+      toast.success('Producto creado');
+      router.push('/productos');
+    },
+    onError: (err) => {
+      toast.error(getErrorMessage(err));
+    },
   });
 
   const handleSubmit = async (values: ProductoFormValues) => {
@@ -36,10 +43,9 @@ export default function NuevoProductoPage() {
           },
         },
       });
-      toast.success('Producto creado');
-      router.push('/productos');
-    } catch (err) {
-      toast.error(getErrorMessage(err));
+    } catch {
+      // El toast ya se disparo via onError. Silenciamos para que el await
+      // no burbujee a Formik (que setSubmitting(false) corra normal).
     }
   };
 
