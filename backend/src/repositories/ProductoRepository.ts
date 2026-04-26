@@ -370,6 +370,10 @@ export class ProductoRepository {
 
   async create(data: CrearProductoData, session?: ClientSession): Promise<ProductoDocument> {
     const [doc] = await ProductoModel.create([data], { session });
+    // Por consistencia con findById/paginate, devolvemos el doc populado.
+    // En create no hay entradas en stockPorAlmacen aun, asi que es no-op,
+    // pero deja la firma uniforme y previene null en GraphQL non-nullable.
+    await doc.populate('stockPorAlmacen.almacen');
     return doc;
   }
 
@@ -378,7 +382,9 @@ export class ProductoRepository {
       new: true,
       runValidators: true,
       session,
-    }).exec();
+    })
+      .populate('stockPorAlmacen.almacen')
+      .exec();
   }
 
   /**
@@ -424,6 +430,9 @@ export class ProductoRepository {
     if (update.precioCompra !== undefined) doc.precioCompra = update.precioCompra;
 
     await doc.save({ session });
+    // Re-populate por si el cliente pide stockPorAlmacen.almacen.codigo
+    // del producto actualizado en la misma respuesta.
+    await doc.populate('stockPorAlmacen.almacen');
     return doc;
   }
 
@@ -443,11 +452,15 @@ export class ProductoRepository {
   }
 
   softDelete(id: string) {
-    return ProductoModel.findByIdAndUpdate(id, { activo: false }, { new: true }).exec();
+    return ProductoModel.findByIdAndUpdate(id, { activo: false }, { new: true })
+      .populate('stockPorAlmacen.almacen')
+      .exec();
   }
 
   restore(id: string) {
-    return ProductoModel.findByIdAndUpdate(id, { activo: true }, { new: true }).exec();
+    return ProductoModel.findByIdAndUpdate(id, { activo: true }, { new: true })
+      .populate('stockPorAlmacen.almacen')
+      .exec();
   }
 
   private buildQuery(filter: ProductoFilter): FilterQuery<ProductoDocument> {
