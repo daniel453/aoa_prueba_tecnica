@@ -1,33 +1,54 @@
+interface GqlErrorShape {
+  message: string;
+  extensions?: { code?: string };
+}
+
 interface ApolloLikeError {
-  graphQLErrors?: { message: string; extensions?: { code?: string } }[];
-  networkError?: { message?: string } | null;
+  graphQLErrors?: GqlErrorShape[];
+  /**
+   * networkError aparece cuando Apollo Client recibe HTTP 4xx/5xx aunque
+   * el body sea un response GraphQL valido (caso tipico: el backend tipa
+   * sus errores con `http: { status: 409 }`). En ese caso `result.errors`
+   * trae los errores GraphQL reales.
+   */
+  networkError?: {
+    message?: string;
+    statusCode?: number;
+    result?: { errors?: GqlErrorShape[] };
+  } | null;
   message?: string;
 }
 
-/**
- * Mensajes propios para codes donde el backend devuelve algo tecnico
- * o ambiguo. Para los demas codes preferimos el mensaje del backend
- * porque suele ser mas especifico (ej. "Ya existe un registro con ese
- * codigo" vs un generico "duplicado").
- */
 const messageOverrides: Record<string, string> = {
   UNAUTHENTICATED: 'Sesión expirada. Vuelve a iniciar sesión.',
   FORBIDDEN: 'No tienes permisos para realizar esta acción.',
   INVALID_CREDENTIALS: 'Credenciales inválidas.',
 };
 
-export function getErrorMessage(err: unknown, fallback = 'Ocurrió un error'): string {
+/** Combina graphQLErrors top-level + los embebidos en networkError.result. */
+function collectGqlErrors(err: ApolloLikeError): GqlErrorShape[] {
+  const list: GqlErrorShape[] = [];
+  if (err?.graphQLErrors?.length) list.push(...err.graphQLErrors);
+  const nested = err?.networkError?.result?.errors;
+  if (nested?.length) list.push(...nested);
+  return list;
+}
+
+function pickMessage(g: GqlErrorShape): string {
+  const code = g.extensions?.code;
+  if (code && messageOverrides[code]) return messageOverrides[code];
+  return g.message;
+}
+
+export function getErrorMessage(
+  err: unknown,
+  fallback = 'Ocurrió un error',
+): string {
   const e = err as ApolloLikeError;
-  const gqlErr = e?.graphQLErrors?.[0];
+  const all = collectGqlErrors(e);
+  if (all.length > 0) return pickMessage(all[0]);
 
-  if (gqlErr) {
-    const code = gqlErr.extensions?.code;
-    // Si tenemos override propio para este code, usarlo
-    if (code && messageOverrides[code]) return messageOverrides[code];
-    // Si no, preferir el mensaje del backend (suele ser especifico)
-    if (gqlErr.message) return gqlErr.message;
-  }
-
+  // Solo aqui es realmente "no hay conexion / server caido / DNS fail"
   if (e?.networkError) {
     return 'No se pudo conectar con el servidor. Revisa tu conexión.';
   }
@@ -37,7 +58,8 @@ export function getErrorMessage(err: unknown, fallback = 'Ocurrió un error'): s
 
 export function getErrorCode(err: unknown): string | undefined {
   const e = err as ApolloLikeError;
-  return e?.graphQLErrors?.[0]?.extensions?.code;
+  const all = collectGqlErrors(e);
+  return all[0]?.extensions?.code;
 }
 
 /**
@@ -46,13 +68,7 @@ export function getErrorCode(err: unknown): string | undefined {
  */
 export function getAllErrorMessages(err: unknown): string[] {
   const e = err as ApolloLikeError;
-  if (!e?.graphQLErrors?.length) {
-    const single = getErrorMessage(err);
-    return single ? [single] : [];
-  }
-  return e.graphQLErrors.map((g) => {
-    const code = g.extensions?.code;
-    if (code && messageOverrides[code]) return messageOverrides[code];
-    return g.message;
-  });
+  const all = collectGqlErrors(e);
+  if (all.length > 0) return all.map(pickMessage);
+  return [getErrorMessage(err)];
 }
