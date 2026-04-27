@@ -35,13 +35,18 @@ async function bootstrap(): Promise<void> {
   await apollo.start();
 
   // 4. Express
+  // Express necesita 'trust proxy' para leer correctamente X-Forwarded-Host
+  // cuando vive detras de Caddy/nginx/Cloudflare.
   const app = express();
+  app.set('trust proxy', true);
 
   // FRONTEND_URL puede ser un dominio o lista separada por coma.
   // Adicionalmente aceptamos:
+  //   - Same-origin: cuando el Origin del request coincide con el Host
+  //     que esta sirviendo (ej. abrir /graphql del backend en el browser
+  //     -> Apollo Sandbox hace requests al mismo backend).
   //   - Previews de Vercel (*.vercel.app)
-  //   - Same-origin (localhost en dev, *.onrender.com en prod) para que
-  //     Apollo Sandbox embebido en /graphql pueda hacer introspeccion.
+  //   - Servicios conocidos (Render, Apollo Studio Sandbox)
   const allowList = env.frontendUrl
     .split(',')
     .map((s) => s.trim())
@@ -56,18 +61,29 @@ async function bootstrap(): Promise<void> {
     /^https:\/\/studio\.apollographql\.com$/,
   ];
 
+  // CorsOptionsDelegate: recibe el req para poder comparar Origin con
+  // el Host real del request (same-origin checking automatico).
   app.use(
-    cors({
-      origin: (origin, cb) => {
-        // Permitir requests sin Origin (curl, healthchecks)
-        if (!origin) return cb(null, true);
-        if (allowList.includes(origin)) return cb(null, true);
-        if (sameOriginPatterns.some((re) => re.test(origin))) {
-          return cb(null, true);
-        }
-        return cb(new Error(`Origin no permitido por CORS: ${origin}`));
-      },
-      credentials: true,
+    cors((req, cb) => {
+      const origin = req.headers.origin;
+      const opts = { origin: true as boolean, credentials: true };
+
+      // Sin Origin = no es CORS request (curl, healthcheck) -> permitir
+      if (!origin) return cb(null, opts);
+
+      // Same-origin: el host del request matches el origin
+      const reqHost = (req.headers['x-forwarded-host'] as string | undefined)
+        ?? (req.headers.host as string | undefined);
+      if (reqHost) {
+        const originHost = origin.replace(/^https?:\/\//, '').toLowerCase();
+        if (originHost === reqHost.toLowerCase()) return cb(null, opts);
+      }
+
+      if (allowList.includes(origin)) return cb(null, opts);
+      if (sameOriginPatterns.some((re) => re.test(origin))) {
+        return cb(null, opts);
+      }
+      return cb(new Error(`Origin no permitido por CORS: ${origin}`));
     }),
   );
 
